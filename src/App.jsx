@@ -12,7 +12,7 @@ const initialTasks = [
   { id: 2, title: 'Belajar konfigurasi jaringan', subject: 'Cisco SRWE', due: '2026-11-12', priority: 'Sedang', notes: '', done: false },
   { id: 3, title: 'Mengerjakan tugas API REST', subject: 'Pemrograman Web', due: '2026-11-08', priority: 'Tinggi', notes: '', done: true }
 ]
-const defaultProfile = { name: 'Andhika Dhuta Pratama', nim: '', group: '30', major: 'Teknik Komputer' }
+const defaultProfile = { name: '', nim: '', group: '', major: '' }
 const today = () => new Date().toISOString().slice(0, 10)
 const readStorage = (key, fallback) => {
   try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback }
@@ -23,7 +23,7 @@ const formatDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateStr
 export default function App() {
   const [page, setPage] = useState('dashboard')
   const [tasks, setTasks] = useState(() => readStorage(STORAGE_KEY, initialTasks))
-  const [profile, setProfile] = useState(() => readStorage(PROFILE_KEY, defaultProfile))
+  const [profile, setProfile] = useState(() => readStorage(PROFILE_KEY, null))
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('Semua')
   const [editing, setEditing] = useState(null)
@@ -32,7 +32,10 @@ export default function App() {
   const [toast, setToast] = useState('')
 
   useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)), [tasks])
-  useEffect(() => localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)), [profile])
+  useEffect(() => {
+    if (profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+    else localStorage.removeItem(PROFILE_KEY)
+  }, [profile])
   useEffect(() => {
     if (!toast) return
     const timer = setTimeout(() => setToast(''), 2600)
@@ -85,12 +88,12 @@ export default function App() {
       <div className="brand"><div className="brand-icon"><GraduationCap size={24}/></div><div><b>StudyMate</b><span>Student Workspace</span></div><button className="close-menu" onClick={() => setMobileMenu(false)}><X/></button></div>
       <div className="nav-label">MENU UTAMA</div>
       <nav>{navItems.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}><item.icon size={19}/><span>{item.label}</span>{page === item.id && <span className="nav-dot"/>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="mini-card"><Sparkles size={17}/><div><b>Keep it organized</b><span>Langkah kecil, hasil besar.</span></div></div><div className="sidebar-user"><div className="avatar">{(profile.name || 'M').charAt(0).toUpperCase()}</div><div className="user-info"><b>{profile.name || 'Mahasiswa'}</b><span>Kelompok {profile.group || '-'}</span></div><button title="Buka profil" onClick={() => navigate('profile')}><ArrowUpRight size={17}/></button></div></div>
+      <div className="sidebar-bottom"><div className="mini-card"><Sparkles size={17}/><div><b>Keep it organized</b><span>Langkah kecil, hasil besar.</span></div></div><div className="sidebar-user"><div className="avatar">{(profile?.name || 'M').charAt(0).toUpperCase()}</div><div className="user-info"><b>{profile?.name || 'Mahasiswa'}</b><span>Kelompok {profile?.group || '-'}</span></div><button title="Buka profil" onClick={() => navigate('profile')}><ArrowUpRight size={17}/></button></div></div>
     </aside>
 
     {mobileMenu && <div className="overlay" onClick={() => setMobileMenu(false)}/>}
     <main className="main">
-      <header className="topbar"><button className="menu-toggle" onClick={() => setMobileMenu(true)}><Menu/></button><div className="breadcrumb">Workspace <span>/</span> <b>{navItems.find(n => n.id === page)?.label}</b></div><div className="top-right"><span className="online"><span/> Offline-ready PWA</span><div className="avatar small">{(profile.name || 'M').charAt(0).toUpperCase()}</div></div></header>
+      <header className="topbar"><button className="menu-toggle" onClick={() => setMobileMenu(true)}><Menu/></button><div className="breadcrumb">Workspace <span>/</span> <b>{navItems.find(n => n.id === page)?.label}</b></div><div className="top-right"><span className="online"><span/> Offline-ready PWA</span><div className="avatar small">{(profile?.name || 'M').charAt(0).toUpperCase()}</div></div></header>
       <div className="content">
         {page === 'dashboard' && <Dashboard tasks={tasks} stats={stats} navigate={navigate} openNew={openNew} toggleTask={toggleTask}/>}
         {page === 'tasks' && <Tasks tasks={filteredTasks} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} openNew={openNew} openEdit={openEdit} deleteTask={deleteTask} toggleTask={toggleTask}/>}
@@ -137,14 +140,41 @@ function Tasks({ tasks, search, setSearch, filter, setFilter, openNew, openEdit,
   </>
 }
 function Profile({ profile, setProfile, setToast }) {
-  const [form, setForm] = useState(profile)
-  useEffect(() => setForm(profile), [profile])
-  const change = e => setForm({...form, [e.target.name]: e.target.value})
-  const save = e => { e.preventDefault(); setProfile(form); setToast('Profil berhasil disimpan.') }
+  const emptyProfile = { name: '', nim: '', group: '', major: '' }
+  const [form, setForm] = useState(profile || emptyProfile)
+  const [editing, setEditing] = useState(!profile)
+  useEffect(() => { setForm(profile || emptyProfile); setEditing(!profile) }, [profile])
+  const change = e => setForm({ ...form, [e.target.name]: e.target.value })
+  const save = e => {
+    e.preventDefault()
+    setProfile({ ...form })
+    setEditing(false)
+    setToast(profile ? 'Profil berhasil diperbarui.' : 'Profil berhasil ditambahkan.')
+  }
+  const deleteProfile = () => {
+    if (confirm('Yakin ingin menghapus data profil mahasiswa?')) {
+      setProfile(null); setForm(emptyProfile); setEditing(true)
+      setToast('Profil mahasiswa berhasil dihapus.')
+    }
+  }
   return <>
-    <PageHeading eyebrow="STUDENT PROFILE" title="Profil Mahasiswa" subtitle="Informasi identitas mahasiswa yang menggunakan StudyMate."/>
-    <div className="profile-layout"><div className="profile-card panel"><div className="profile-cover"><div className="profile-avatar">{(form.name || 'M').charAt(0).toUpperCase()}</div></div><h2>{form.name || 'Nama Mahasiswa'}</h2><p>{form.major || 'Program Studi'}</p><span className="profile-group">Kelompok {form.group || '-'}</span><div className="profile-meta"><div><span>NIM</span><b>{form.nim || 'Belum diisi'}</b></div><div><span>Kelompok</span><b>{form.group || 'Belum diisi'}</b></div></div></div>
-      <form className="panel profile-form" onSubmit={save}><div className="panel-head"><div><h3>Informasi Mahasiswa</h3><p>Perbarui data identitasmu.</p></div></div><label>Nama Lengkap<input name="name" value={form.name} onChange={change} required placeholder="Nama lengkap"/></label><label>Nomor Induk Mahasiswa (NIM)<input name="nim" value={form.nim} onChange={change} placeholder="Masukkan NIM"/></label><label>Kelompok Praktikum<input name="group" value={form.group} onChange={change} required placeholder="Contoh: 30"/></label><label>Program Studi<input name="major" value={form.major} onChange={change} placeholder="Program studi"/></label><button className="primary-btn" type="submit">Simpan Profil</button></form></div>
+    <PageHeading eyebrow="STUDENT PROFILE" title="Profil Mahasiswa" subtitle="Kelola data identitas mahasiswa. Data awal kosong dan dapat ditambahkan kapan saja."
+      action={profile && !editing ? <button className="primary-btn" onClick={() => setEditing(true)}><Pencil size={16}/> Edit Profil</button> : null}/>
+    {!profile && !editing && <div className="panel empty-profile"><User size={34}/><h3>Belum ada profil mahasiswa</h3><p>Tambahkan data nama, NIM, dan kelompok untuk memulai.</p><button className="primary-btn" onClick={() => setEditing(true)}><Plus size={17}/> Tambah Profil</button></div>}
+    {profile && !editing && <div className="profile-layout">
+      <div className="profile-card panel"><div className="profile-cover"><div className="profile-avatar">{(profile.name || 'M').charAt(0).toUpperCase()}</div></div><h2>{profile.name}</h2><p>{profile.major || 'Program Studi belum diisi'}</p><span className="profile-group">Kelompok {profile.group || '-'}</span><div className="profile-meta"><div><span>NIM</span><b>{profile.nim || '-'}</b></div><div><span>Kelompok</span><b>{profile.group || '-'}</b></div></div></div>
+      <div className="panel profile-form profile-details"><div className="panel-head"><div><h3>Detail Profil</h3><p>Data mahasiswa yang tersimpan.</p></div></div>
+        <div className="profile-detail-row"><span>Nama Lengkap</span><b>{profile.name}</b></div><div className="profile-detail-row"><span>NIM</span><b>{profile.nim || '-'}</b></div><div className="profile-detail-row"><span>Kelompok Praktikum</span><b>{profile.group || '-'}</b></div><div className="profile-detail-row"><span>Program Studi</span><b>{profile.major || '-'}</b></div>
+        <div className="profile-actions"><button className="primary-btn" onClick={() => setEditing(true)}><Pencil size={16}/> Edit Profil</button><button className="danger-btn" onClick={deleteProfile}><Trash2 size={16}/> Hapus Profil</button></div>
+      </div>
+    </div>}
+    {editing && <div className="profile-layout">
+      <div className="profile-card panel"><div className="profile-cover"><div className="profile-avatar">{(form.name || 'M').charAt(0).toUpperCase()}</div></div><h2>{form.name || 'Nama Mahasiswa'}</h2><p>{form.major || 'Program Studi'}</p><span className="profile-group">Kelompok {form.group || '-'}</span><div className="profile-meta"><div><span>NIM</span><b>{form.nim || 'Belum diisi'}</b></div><div><span>Kelompok</span><b>{form.group || 'Belum diisi'}</b></div></div></div>
+      <form className="panel profile-form" onSubmit={save}><div className="panel-head"><div><h3>{profile ? 'Edit Profil Mahasiswa' : 'Tambah Profil Mahasiswa'}</h3><p>Isi informasi identitas mahasiswa.</p></div></div>
+        <label>Nama Lengkap *<input name="name" value={form.name} onChange={change} required placeholder="Nama lengkap"/></label><label>Nomor Induk Mahasiswa (NIM) *<input name="nim" value={form.nim} onChange={change} required placeholder="Masukkan NIM"/></label><label>Kelompok Praktikum *<input name="group" value={form.group} onChange={change} required placeholder="Contoh: 30"/></label><label>Program Studi<input name="major" value={form.major} onChange={change} placeholder="Program studi"/></label>
+        <div className="profile-actions"><button className="primary-btn" type="submit"><CheckCircle2 size={16}/> {profile ? 'Simpan Perubahan' : 'Simpan Profil'}</button>{profile && <button type="button" className="secondary-btn" onClick={() => { setForm(profile); setEditing(false) }}>Batal</button>}</div>
+      </form>
+    </div>}
   </>
 }
 function About() {
