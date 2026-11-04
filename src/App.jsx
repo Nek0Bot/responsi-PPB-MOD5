@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useTasks } from './hooks/useTasks'
+import { useTasks } from './hooks/useTasks.js'
 import taskService from './services/taskService.js'
 import {
   LayoutDashboard, ClipboardList, User, Info, Plus, Search, Pencil,
