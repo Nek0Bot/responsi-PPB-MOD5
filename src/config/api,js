@@ -1,13 +1,11 @@
+/// <reference types="vite/client" />
 
 import axios from 'axios'
 
-const { VITE_API_BASE_URL: BASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY: SUPABASE_KEY } =
-  (import.meta as unknown as {
-    env: {
-      VITE_API_BASE_URL: string
-      VITE_SUPABASE_PUBLISHABLE_KEY: string
-    }
-  }).env
+const {
+  VITE_API_BASE_URL: BASE_URL,
+  VITE_SUPABASE_PUBLISHABLE_KEY: SUPABASE_KEY,
+} = import.meta.env
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
