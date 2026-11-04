@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
-import taskService from '../services/taskservice'
+import taskService from '../services/taskService'
 
 export function useTasks() {
   const [tasks, setTasks] = useState([])
@@ -11,9 +11,11 @@ export function useTasks() {
     try {
       setLoading(true)
       setError(null)
+
       const data = await taskService.getTasks()
       setTasks(data)
     } catch (err) {
+      console.error('Gagal mengambil tugas:', err)
       setError('Gagal mengambil data tugas.')
     } finally {
       setLoading(false)

@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTasks } from './hooks/useTask'
+import taskService from './services/taskService'
 import {
   LayoutDashboard, ClipboardList, User, Info, Plus, Search, Pencil,
   Trash2, CheckCircle2, Circle, CalendarDays, BookOpen, Clock3, Menu, X,
   GraduationCap, Sparkles, Filter, ArrowUpRight
 } from 'lucide-react'
 
-const STORAGE_KEY = 'studymate-tasks-v1'
 const PROFILE_KEY = 'studymate-profile-v1'
-const initialTasks = [
-  { id: 1, title: 'Membuat laporan praktikum PPB', subject: 'Pengembangan Perangkat Bergerak', due: '2026-11-10', priority: 'Tinggi', notes: 'Selesaikan bagian implementasi.', done: false },
-  { id: 2, title: 'Belajar konfigurasi jaringan', subject: 'Cisco SRWE', due: '2026-11-12', priority: 'Sedang', notes: '', done: false },
-  { id: 3, title: 'Mengerjakan tugas API REST', subject: 'Pemrograman Web', due: '2026-11-08', priority: 'Tinggi', notes: '', done: true }
-]
 const defaultProfile = { name: '', nim: '', group: '', major: '' }
 const today = () => new Date().toISOString().slice(0, 10)
 const readStorage = (key, fallback) => {
@@ -22,7 +18,7 @@ const formatDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateStr
 
 export default function App() {
   const [page, setPage] = useState('dashboard')
-  const [tasks, setTasks] = useState(() => readStorage(STORAGE_KEY, initialTasks))
+  const { tasks, loading, error, fetchTasks } = useTasks()
   const [profile, setProfile] = useState(() => readStorage(PROFILE_KEY, null))
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('Semua')
@@ -31,7 +27,6 @@ export default function App() {
   const [mobileMenu, setMobileMenu] = useState(false)
   const [toast, setToast] = useState('')
 
-  useEffect(() => localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)), [tasks])
   useEffect(() => {
     if (profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
     else localStorage.removeItem(PROFILE_KEY)
@@ -58,23 +53,56 @@ export default function App() {
   const navigate = (next) => { setPage(next); setMobileMenu(false) }
   const openNew = () => { setEditing(null); setModal(true) }
   const openEdit = (task) => { setEditing(task); setModal(true) }
-  const saveTask = (task) => {
-    if (editing) {
-      setTasks(prev => prev.map(t => t.id === editing.id ? { ...task, id: editing.id } : t))
-      setToast('Tugas berhasil diperbarui.')
-    } else {
-      setTasks(prev => [{ ...task, id: Date.now(), done: false }, ...prev])
-      setToast('Tugas berhasil ditambahkan.')
+  const saveTask = async (task) => {
+    const payload = {
+      title: task.title,
+      subject: task.subject || '',
+      due: task.due || null,
+      priority: task.priority || 'Sedang',
+      notes: task.notes || '',
+      done: Boolean(task.done),
     }
-    setModal(false); setEditing(null)
+
+    try {
+      if (editing) {
+        await taskService.updateTask(editing.id, payload)
+        setToast('Tugas berhasil diperbarui.')
+      } else {
+        await taskService.createTask({ ...payload, done: false })
+        setToast('Tugas berhasil ditambahkan.')
+      }
+      await fetchTasks()
+      setModal(false)
+      setEditing(null)
+    } catch (err) {
+      console.error('Gagal menyimpan tugas:', err)
+      setToast('Gagal menyimpan tugas. Periksa koneksi/API Supabase.')
+    }
   }
-  const deleteTask = (id) => {
-    if (confirm('Yakin ingin menghapus tugas ini?')) {
-      setTasks(prev => prev.filter(t => t.id !== id))
+
+  const deleteTask = async (id) => {
+    if (!confirm('Yakin ingin menghapus tugas ini?')) return
+    try {
+      await taskService.deleteTask(id)
+      await fetchTasks()
       setToast('Tugas berhasil dihapus.')
+    } catch (err) {
+      console.error('Gagal menghapus tugas:', err)
+      setToast('Gagal menghapus tugas dari database.')
     }
   }
-  const toggleTask = (id) => setTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t))
+
+  const toggleTask = async (id) => {
+    const task = tasks.find(t => t.id === id)
+    if (!task) return
+    try {
+      await taskService.updateTask(id, { done: !task.done })
+      await fetchTasks()
+    } catch (err) {
+      console.error('Gagal mengubah status tugas:', err)
+      setToast('Gagal mengubah status tugas.')
+    }
+  }
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -95,10 +123,14 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-toggle" onClick={() => setMobileMenu(true)}><Menu/></button><div className="breadcrumb">Workspace <span>/</span> <b>{navItems.find(n => n.id === page)?.label}</b></div><div className="top-right"><span className="online"><span/> Offline-ready PWA</span><div className="avatar small">{(profile?.name || 'M').charAt(0).toUpperCase()}</div></div></header>
       <div className="content">
-        {page === 'dashboard' && <Dashboard tasks={tasks} stats={stats} navigate={navigate} openNew={openNew} toggleTask={toggleTask}/>}
-        {page === 'tasks' && <Tasks tasks={filteredTasks} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} openNew={openNew} openEdit={openEdit} deleteTask={deleteTask} toggleTask={toggleTask}/>}
-        {page === 'profile' && <Profile profile={profile} setProfile={setProfile} setToast={setToast}/>}
-        {page === 'about' && <About/>}
+        {loading && <div className="panel"><p>Memuat tugas dari Supabase...</p></div>}
+        {!loading && error && <div className="panel"><p>{error}</p><button className="primary-btn" onClick={fetchTasks}>Coba Lagi</button></div>}
+        {!loading && !error && <>
+          {page === 'dashboard' && <Dashboard tasks={tasks} stats={stats} navigate={navigate} openNew={openNew} toggleTask={toggleTask}/>}
+          {page === 'tasks' && <Tasks tasks={filteredTasks} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} openNew={openNew} openEdit={openEdit} deleteTask={deleteTask} toggleTask={toggleTask}/>}
+          {page === 'profile' && <Profile profile={profile} setProfile={setProfile} setToast={setToast}/>}
+          {page === 'about' && <About/>}
+        </>}
       </div>
       <footer>© 2026 StudyMate <span>Built for better learning habits.</span></footer>
     </main>
