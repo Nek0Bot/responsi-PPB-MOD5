@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
-import taskService from '../services/taskService'
+import taskService from '../services/taskService.js'
 
 export function useTasks() {
   const [tasks, setTasks] = useState([])
