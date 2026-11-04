@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback } from 'react'
 import taskService from '../services/taskService.js'
 
@@ -15,7 +14,7 @@ export function useTasks() {
       const data = await taskService.getTasks()
       setTasks(data)
     } catch (err) {
-      console.error('Gagal mengambil tugas:', err)
+      console.error(err)
       setError('Gagal mengambil data tugas.')
     } finally {
       setLoading(false)
