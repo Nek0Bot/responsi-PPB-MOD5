@@ -1,25 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTasks } from './hooks/useTasks.js'
+import { useProfile } from './hooks/useProfile.js'
 import taskService from './services/taskService.js'
+import profileService from './services/profileService.js'
 import {
   LayoutDashboard, ClipboardList, User, Info, Plus, Search, Pencil,
   Trash2, CheckCircle2, Circle, CalendarDays, BookOpen, Clock3, Menu, X,
-  GraduationCap, Sparkles, Filter, ArrowUpRight
+  GraduationCap, Sparkles, Filter, ArrowUpRight, Users
 } from 'lucide-react'
-
-const PROFILE_KEY = 'studymate-profile-v1'
-const defaultProfile = { name: '', nim: '', group: '', major: '' }
-const today = () => new Date().toISOString().slice(0, 10)
-const readStorage = (key, fallback) => {
-  try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback }
-  catch { return fallback }
-}
 const formatDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Belum ditentukan'
 
 export default function App() {
   const [page, setPage] = useState('dashboard')
-  const { tasks, loading, error, fetchTasks } = useTasks()
-  const [profile, setProfile] = useState(() => readStorage(PROFILE_KEY, null))
+  const { profile, profileLoading, saveProfile, deleteProfile } = useProfile()
+  const { tasks, loading, error, fetchTasks } = useTasks(profile?.id)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('Semua')
   const [editing, setEditing] = useState(null)
@@ -27,10 +21,6 @@ export default function App() {
   const [mobileMenu, setMobileMenu] = useState(false)
   const [toast, setToast] = useState('')
 
-  useEffect(() => {
-    if (profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
-    else localStorage.removeItem(PROFILE_KEY)
-  }, [profile])
   useEffect(() => {
     if (!toast) return
     const timer = setTimeout(() => setToast(''), 2600)
@@ -51,7 +41,10 @@ export default function App() {
   })
 
   const navigate = (next) => { setPage(next); setMobileMenu(false) }
-  const openNew = () => { setEditing(null); setModal(true) }
+  const openNew = () => {
+    if (!profile) { setToast('Buat profil dulu sebelum menambah tugas.'); navigate('profile'); return }
+    setEditing(null); setModal(true)
+  }
   const openEdit = (task) => { setEditing(task); setModal(true) }
   const saveTask = async (task) => {
     const payload = {
@@ -68,7 +61,7 @@ export default function App() {
         await taskService.updateTask(editing.id, payload)
         setToast('Tugas berhasil diperbarui.')
       } else {
-        await taskService.createTask({ ...payload, done: false })
+        await taskService.createTask({ ...payload, profile_id: profile.id, done: false })
         setToast('Tugas berhasil ditambahkan.')
       }
       await fetchTasks()
@@ -108,6 +101,7 @@ export default function App() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'tasks', label: 'Manajemen Tugas', icon: ClipboardList },
     { id: 'profile', label: 'Profil Mahasiswa', icon: User },
+    { id: 'boards', label: 'Papan Mahasiswa', icon: Users },
     { id: 'about', label: 'Tentang Aplikasi', icon: Info }
   ]
 
@@ -123,14 +117,19 @@ export default function App() {
     <main className="main">
       <header className="topbar"><button className="menu-toggle" onClick={() => setMobileMenu(true)}><Menu/></button><div className="breadcrumb">Workspace <span>/</span> <b>{navItems.find(n => n.id === page)?.label}</b></div><div className="top-right"><span className="online"><span/> Offline-ready PWA</span><div className="avatar small">{(profile?.name || 'M').charAt(0).toUpperCase()}</div></div></header>
       <div className="content">
-        {loading && <div className="panel"><p>Memuat tugas dari Supabase...</p></div>}
-        {!loading && error && <div className="panel"><p>{error}</p><button className="primary-btn" onClick={fetchTasks}>Coba Lagi</button></div>}
-        {!loading && !error && <>
-          {page === 'dashboard' && <Dashboard tasks={tasks} stats={stats} navigate={navigate} openNew={openNew} toggleTask={toggleTask}/>}
-          {page === 'tasks' && <Tasks tasks={filteredTasks} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} openNew={openNew} openEdit={openEdit} deleteTask={deleteTask} toggleTask={toggleTask}/>}
-          {page === 'profile' && <Profile profile={profile} setProfile={setProfile} setToast={setToast}/>}
-          {page === 'about' && <About/>}
-        </>}
+        {page === 'boards' && <Boards currentId={profile?.id}/>}
+        {page === 'about' && <About/>}
+        {page === 'profile' && (profileLoading
+          ? <div className="panel"><p>Memuat profil...</p></div>
+          : <Profile profile={profile} onSave={saveProfile} onDelete={deleteProfile} setToast={setToast}/>)}
+        {(page === 'dashboard' || page === 'tasks') && (
+          (profileLoading || loading) ? <div className="panel"><p>Memuat tugas...</p></div>
+          : !profile ? <NoProfile navigate={navigate}/>
+          : error ? <div className="panel"><p>{error}</p><button className="primary-btn" onClick={fetchTasks}>Coba Lagi</button></div>
+          : page === 'dashboard'
+            ? <Dashboard tasks={tasks} stats={stats} navigate={navigate} openNew={openNew} toggleTask={toggleTask}/>
+            : <Tasks tasks={filteredTasks} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} openNew={openNew} openEdit={openEdit} deleteTask={deleteTask} toggleTask={toggleTask}/>
+        )}
       </div>
       <footer>© 2026 StudyMate <span>Built for better learning habits.</span></footer>
     </main>
@@ -159,8 +158,73 @@ function Dashboard({ tasks, stats, navigate, openNew, toggleTask }) {
   </>
 }
 function Stat({ title, value, icon: Icon, tone, note }) { return <div className="stat-card"><div className={`stat-icon ${tone}`}><Icon size={20}/></div><span className="stat-title">{title}</span><strong>{value}</strong><small>{note}</small></div> }
-function TaskRow({ task, toggleTask }) { return <div className={`task-row ${task.done ? 'task-done' : ''}`}><button className="check-btn" onClick={() => toggleTask(task.id)}>{task.done ? <CheckCircle2 size={21}/> : <Circle size={21}/>}</button><div className="task-row-main"><b>{task.title}</b><span>{task.subject || 'Tanpa mata kuliah'}</span></div><div className="task-row-date"><CalendarDays size={14}/>{formatDate(task.due)}</div><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span></div> }
+function TaskRow({ task, toggleTask, readOnly = false }) {
+  const priority = task.priority || 'Sedang'
+  const icon = task.done ? <CheckCircle2 size={21}/> : <Circle size={21}/>
+  return <div className={`task-row ${task.done ? 'task-done' : ''}`}>
+    {readOnly ? <span className="check-btn">{icon}</span> : <button className="check-btn" onClick={() => toggleTask(task.id)}>{icon}</button>}
+    <div className="task-row-main"><b>{task.title}</b><span>{task.subject || 'Tanpa mata kuliah'}</span></div>
+    <div className="task-row-date"><CalendarDays size={14}/>{formatDate(task.due)}</div>
+    <span className={`priority ${priority.toLowerCase()}`}>{priority}</span>
+  </div>
+}
 function Empty({ text }) { return <div className="empty"><ClipboardList size={32}/><p>{text}</p></div> }
+
+
+
+function NoProfile({ navigate }) {
+  return <div className="panel empty-profile"><User size={34}/><h3>Buat profil dulu</h3><p>Tugasmu disimpan di papan milikmu. Buat profil, atau masuk dengan NIM yang sudah terdaftar.</p><button className="primary-btn" onClick={() => navigate('profile')}>Buat / Masuk Profil</button></div>
+}
+
+function Boards({ currentId }) {
+  const [profiles, setProfiles] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [boardTasks, setBoardTasks] = useState([])
+  const [boardLoading, setBoardLoading] = useState(false)
+
+  useEffect(() => {
+    profileService.list()
+      .then(setProfiles)
+      .catch(() => setError('Gagal memuat daftar mahasiswa.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const openBoard = async (p) => {
+    setSelected(p); setBoardTasks([]); setBoardLoading(true); setError('')
+    try {
+      const data = await taskService.getTasks(p.id)
+      setBoardTasks(Array.isArray(data) ? data : [])
+    } catch { setError('Gagal memuat papan tugas.') }
+    finally { setBoardLoading(false) }
+  }
+
+  if (selected) {
+    const done = boardTasks.filter(t => t.done).length
+    return <>
+      <PageHeading eyebrow="PAPAN MAHASISWA" title={`Papan ${selected.name}${selected.id === currentId ? ' (Kamu)' : ''}`} subtitle={`NIM ${selected.nim} · Kelompok ${selected.group || '-'} · ${done}/${boardTasks.length} tugas selesai`} action={<button className="secondary-btn" onClick={() => setSelected(null)}>← Kembali</button>}/>
+      <section className="panel">
+        {error && <p>{error}</p>}
+        {boardLoading ? <p>Memuat tugas...</p>
+          : boardTasks.length ? <div className="task-list">{boardTasks.map(t => <TaskRow key={t.id} task={t} readOnly/>)}</div>
+          : <Empty text="Belum ada tugas di papan ini."/>}
+      </section>
+    </>
+  }
+
+  return <>
+    <PageHeading eyebrow="COMMUNITY" title="Papan Mahasiswa" subtitle="Lihat papan tugas mahasiswa lain. Papan orang lain hanya bisa dilihat."/>
+    {error && <div className="panel"><p>{error}</p></div>}
+    {loading ? <div className="panel"><p>Memuat mahasiswa...</p></div>
+      : profiles.length ? <div className="board-grid">{profiles.map(p =>
+          <button key={p.id} className={`panel board-card ${p.id === currentId ? 'me' : ''}`} onClick={() => openBoard(p)}>
+            <div className="avatar">{(p.name || 'M').charAt(0).toUpperCase()}</div>
+            <div><b>{p.name}{p.id === currentId ? ' (Kamu)' : ''}</b><br/><small>NIM {p.nim} · Kel. {p.group || '-'}</small><br/><span className="soft-badge">{p.taskCount} tugas</span></div>
+          </button>)}</div>
+      : <Empty text="Belum ada mahasiswa terdaftar."/>}
+  </>
+}
 
 function Tasks({ tasks, search, setSearch, filter, setFilter, openNew, openEdit, deleteTask, toggleTask }) {
   return <>
@@ -171,24 +235,39 @@ function Tasks({ tasks, search, setSearch, filter, setFilter, openNew, openEdit,
     </div><div className="table-foot">Menampilkan {tasks.length} tugas</div>
   </>
 }
-function Profile({ profile, setProfile, setToast }) {
+function Profile({ profile, onSave, onDelete, setToast }) {
   const emptyProfile = { name: '', nim: '', group: '', major: '' }
   const [form, setForm] = useState(profile || emptyProfile)
   const [editing, setEditing] = useState(!profile)
+  const [saving, setSaving] = useState(false)
   useEffect(() => { setForm(profile || emptyProfile); setEditing(!profile) }, [profile])
   const change = e => setForm({ ...form, [e.target.name]: e.target.value })
-  const save = e => {
+
+  const save = async e => {
     e.preventDefault()
-    setProfile({ ...form })
-    setEditing(false)
-    setToast(profile ? 'Profil berhasil diperbarui.' : 'Profil berhasil ditambahkan.')
+    setSaving(true)
+    try {
+      const wasNew = !profile
+      const result = await onSave({ ...form })
+      if (result) { setEditing(false); setToast(wasNew ? 'Profil berhasil disimpan.' : 'Profil berhasil diperbarui.') }
+    } catch (err) {
+      console.error(err)
+      setToast('Gagal menyimpan profil. Periksa koneksi/Supabase.')
+    } finally { setSaving(false) }
   }
-  const deleteProfile = () => {
-    if (confirm('Yakin ingin menghapus data profil mahasiswa?')) {
-      setProfile(null); setForm(emptyProfile); setEditing(true)
-      setToast('Profil mahasiswa berhasil dihapus.')
+
+  const handleDelete = async () => {
+    if (!confirm('Menghapus profil juga menghapus semua tugasmu. Lanjutkan?')) return
+    try {
+      await onDelete()
+      setForm(emptyProfile); setEditing(true)
+      setToast('Profil dan tugas berhasil dihapus.')
+    } catch (err) {
+      console.error(err)
+      setToast('Gagal menghapus profil.')
     }
   }
+
   return <>
     <PageHeading eyebrow="STUDENT PROFILE" title="Profil Mahasiswa" subtitle="Kelola data identitas mahasiswa. Data awal kosong dan dapat ditambahkan kapan saja."
       action={profile && !editing ? <button className="primary-btn" onClick={() => setEditing(true)}><Pencil size={16}/> Edit Profil</button> : null}/>
@@ -197,14 +276,14 @@ function Profile({ profile, setProfile, setToast }) {
       <div className="profile-card panel"><div className="profile-cover"><div className="profile-avatar">{(profile.name || 'M').charAt(0).toUpperCase()}</div></div><h2>{profile.name}</h2><p>{profile.major || 'Program Studi belum diisi'}</p><span className="profile-group">Kelompok {profile.group || '-'}</span><div className="profile-meta"><div><span>NIM</span><b>{profile.nim || '-'}</b></div><div><span>Kelompok</span><b>{profile.group || '-'}</b></div></div></div>
       <div className="panel profile-form profile-details"><div className="panel-head"><div><h3>Detail Profil</h3><p>Data mahasiswa yang tersimpan.</p></div></div>
         <div className="profile-detail-row"><span>Nama Lengkap</span><b>{profile.name}</b></div><div className="profile-detail-row"><span>NIM</span><b>{profile.nim || '-'}</b></div><div className="profile-detail-row"><span>Kelompok Praktikum</span><b>{profile.group || '-'}</b></div><div className="profile-detail-row"><span>Program Studi</span><b>{profile.major || '-'}</b></div>
-        <div className="profile-actions"><button className="primary-btn" onClick={() => setEditing(true)}><Pencil size={16}/> Edit Profil</button><button className="danger-btn" onClick={deleteProfile}><Trash2 size={16}/> Hapus Profil</button></div>
+        <div className="profile-actions"><button className="primary-btn" onClick={() => setEditing(true)}><Pencil size={16}/> Edit Profil</button><button className="danger-btn" onClick={handleDelete}><Trash2 size={16}/> Hapus Profil</button></div>
       </div>
     </div>}
     {editing && <div className="profile-layout">
       <div className="profile-card panel"><div className="profile-cover"><div className="profile-avatar">{(form.name || 'M').charAt(0).toUpperCase()}</div></div><h2>{form.name || 'Nama Mahasiswa'}</h2><p>{form.major || 'Program Studi'}</p><span className="profile-group">Kelompok {form.group || '-'}</span><div className="profile-meta"><div><span>NIM</span><b>{form.nim || 'Belum diisi'}</b></div><div><span>Kelompok</span><b>{form.group || 'Belum diisi'}</b></div></div></div>
       <form className="panel profile-form" onSubmit={save}><div className="panel-head"><div><h3>{profile ? 'Edit Profil Mahasiswa' : 'Tambah Profil Mahasiswa'}</h3><p>Isi informasi identitas mahasiswa.</p></div></div>
         <label>Nama Lengkap *<input name="name" value={form.name} onChange={change} required placeholder="Nama lengkap"/></label><label>Nomor Induk Mahasiswa (NIM) *<input name="nim" value={form.nim} onChange={change} required placeholder="Masukkan NIM"/></label><label>Kelompok Praktikum *<input name="group" value={form.group} onChange={change} required placeholder="Contoh: 30"/></label><label>Program Studi<input name="major" value={form.major} onChange={change} placeholder="Program studi"/></label>
-        <div className="profile-actions"><button className="primary-btn" type="submit"><CheckCircle2 size={16}/> {profile ? 'Simpan Perubahan' : 'Simpan Profil'}</button>{profile && <button type="button" className="secondary-btn" onClick={() => { setForm(profile); setEditing(false) }}>Batal</button>}</div>
+        <div className="profile-actions"><button className="primary-btn" type="submit" disabled={saving}><CheckCircle2 size={16}/> {saving ? 'Menyimpan...' : profile ? 'Simpan Perubahan' : 'Simpan Profil'}</button>{profile && <button type="button" className="secondary-btn" onClick={() => { setForm(profile); setEditing(false) }}>Batal</button>}</div>
       </form>
     </div>}
   </>
