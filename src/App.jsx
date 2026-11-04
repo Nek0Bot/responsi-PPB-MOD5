@@ -6,28 +6,13 @@ import profileService from './services/profileService.js'
 import {
   LayoutDashboard, ClipboardList, User, Info, Plus, Search, Pencil,
   Trash2, CheckCircle2, Circle, CalendarDays, BookOpen, Clock3, Menu, X,
-  GraduationCap, Sparkles, Filter, ArrowUpRight, Users
+  GraduationCap, Sparkles, Filter, ArrowUpRight, Users, LogOut
 } from 'lucide-react'
-const formatDate = (date) => date
-  ? new Date(`${date}T00:00:00`).toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
-    })
-  : 'Belum ditentukan'
-
-const today = () => {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-
-  return `${year}-${month}-${day}`
-}
+const formatDate = (date) => date ? new Date(`${date}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Belum ditentukan'
 
 export default function App() {
   const [page, setPage] = useState('dashboard')
-  const { profile, profileLoading, saveProfile, deleteProfile } = useProfile()
+  const { profile, profileLoading, saveProfile, deleteProfile, logout } = useProfile()
   const { tasks, loading, error, fetchTasks } = useTasks(profile?.id)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('Semua')
@@ -56,6 +41,13 @@ export default function App() {
   })
 
   const navigate = (next) => { setPage(next); setMobileMenu(false) }
+  const handleLogout = () => {
+    if (!confirm('Keluar dari akun ini dan ganti profil? Data profil dan tugas tidak akan dihapus.')) return
+    logout()
+    setEditing(null); setModal(false); setSearch(''); setFilter('Semua')
+    navigate('profile')
+    setToast('Berhasil logout. Silakan masuk dengan NIM lain.')
+  }
   const openNew = () => {
     if (!profile) { setToast('Buat profil dulu sebelum menambah tugas.'); navigate('profile'); return }
     setEditing(null); setModal(true)
@@ -125,7 +117,7 @@ export default function App() {
       <div className="brand"><div className="brand-icon"><GraduationCap size={24}/></div><div><b>StudyMate</b><span>Student Workspace</span></div><button className="close-menu" onClick={() => setMobileMenu(false)}><X/></button></div>
       <div className="nav-label">MENU UTAMA</div>
       <nav>{navItems.map(item => <button key={item.id} className={`nav-item ${page === item.id ? 'active' : ''}`} onClick={() => navigate(item.id)}><item.icon size={19}/><span>{item.label}</span>{page === item.id && <span className="nav-dot"/>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="mini-card"><Sparkles size={17}/><div><b>Keep it organized</b><span>Langkah kecil, hasil besar.</span></div></div><div className="sidebar-user"><div className="avatar">{(profile?.name || 'M').charAt(0).toUpperCase()}</div><div className="user-info"><b>{profile?.name || 'Mahasiswa'}</b><span>Kelompok {profile?.group || '-'}</span></div><button title="Buka profil" onClick={() => navigate('profile')}><ArrowUpRight size={17}/></button></div></div>
+      <div className="sidebar-bottom"><div className="mini-card"><Sparkles size={17}/><div><b>Keep it organized</b><span>Langkah kecil, hasil besar.</span></div></div><div className="sidebar-user"><div className="avatar">{(profile?.name || 'M').charAt(0).toUpperCase()}</div><div className="user-info"><b>{profile?.name || 'Mahasiswa'}</b><span>Kelompok {profile?.group || '-'}</span></div><button title="Buka profil" onClick={() => navigate('profile')}><ArrowUpRight size={17}/></button></div>{profile && <button className="logout-btn" onClick={handleLogout}><LogOut size={17}/> Logout / Ganti Akun</button>}</div>
     </aside>
 
     {mobileMenu && <div className="overlay" onClick={() => setMobileMenu(false)}/>}
